@@ -211,6 +211,21 @@ def pack(path: str, mode: str) -> bytes:
 # --------------------------------------------------------------------------
 
 
+def migrate(con: sqlite3.Connection) -> None:
+    """Bring databases created by older versions (0.1.x) up to the schema.
+
+    The 0.1.x collector shipped a single table without `compression` and without
+    `meta`, and it is already deployed on a live host, so upgrading the image
+    must not require a fresh volume.
+    """
+    columns = {row[1] for row in con.execute("PRAGMA table_info(artifacts)")}
+    if columns and "compression" not in columns:
+        con.execute(
+            "ALTER TABLE artifacts ADD COLUMN compression TEXT NOT NULL DEFAULT 'gzip'"
+        )
+        con.commit()
+
+
 def connect(db_path: str) -> sqlite3.Connection:
     os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
     con = sqlite3.connect(db_path, timeout=60)
@@ -219,6 +234,7 @@ def connect(db_path: str) -> sqlite3.Connection:
     # read-only (it has to write -shm next to the file).
     con.execute("PRAGMA journal_mode=DELETE")
     con.executescript(SCHEMA)
+    migrate(con)
     return con
 
 
